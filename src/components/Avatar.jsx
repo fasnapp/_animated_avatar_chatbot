@@ -5,31 +5,91 @@ Command: npx gltfjsx@6.5.3 public/models/695dcd43ca696e5f2f59187c.glb -o src/com
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useGraph } from "@react-three/fiber";
+import { useLoader } from "@react-three/fiber";
 import { useFBX, useGLTF } from "@react-three/drei";
 import { SkeletonUtils } from "three-stdlib";
 import { useAnimations } from "@react-three/drei";
 import { useControls } from "leva";
+import { FileLoader } from "three";
+import { useFrame } from "@react-three/fiber";
 
+import * as THREE from "three";
+
+const corresponding = {
+  A: "viseme_PP",
+  B: "viseme_kk",
+  C: "viseme_I",
+  D: "viseme_AA",
+  E: "viseme_O",
+  F: "viseme_U",
+  G: "viseme_FF",
+  H: "viseme_TH",
+  X: "viseme_PP",
+};
 
 export function Avatar(props) {
-  const {playAudio, script} = useControls({
+  const { playAudio, script } = useControls({
     playAudio: false,
     script: {
       value: "welcome",
       options: ["welcome", "constr"],
+    },
+  });
+
+  const audio = useMemo(() => new Audio(`/audios/${script}.mp3`), [script]);
+
+  const lipsync = useLoader(FileLoader, `audios/${script}.json`, (loader) => {
+    loader.setResponseType("json");
+  });
+  // const lipsync = JSON.parse(jsonFile);
+
+  useFrame(() => {
+    const currentAudioTime = audio.currentTime;
+    if (audio.paused || audio.ended) {
+      setAnimation("Idle");
+    }
+
+    Object.values(corresponding).forEach((value) => {
+      nodes.Wolf3D_Head.morphTargetInfluences[
+        nodes.Wolf3D_Head.morphTargetDictionary[value]
+      ] = 0;
+      nodes.Wolf3D_Teeth.morphTargetInfluences[
+        nodes.Wolf3D_Teeth.morphTargetDictionary[value]
+      ] = 0;
+    });
+    for (let i = 0; i < lipsync.mouthCues.length; i++) {
+      const mouthCue = lipsync.mouthCues[i];
+      if (
+        currentAudioTime >= mouthCue.start &&
+        currentAudioTime <= mouthCue.end
+      ) {
+        console.log(mouthCue.value);
+        nodes.Wolf3D_Head.morphTargetInfluences[
+          nodes.Wolf3D_Head.morphTargetDictionary[corresponding[mouthCue.value]]
+        ] = 1;
+        nodes.Wolf3D_Teeth.morphTargetInfluences[
+          nodes.Wolf3D_Teeth.morphTargetDictionary[
+            corresponding[mouthCue.value]
+          ]
+        ] = 1;
+        break;
+      }
     }
   });
 
-  const audio = useMemo(() => new Audio(`/audios/${script}.mp3`), [script])
-
   useEffect(() => {
-
     if (playAudio) {
       audio.play();
+      if (script === "welcome") {
+        setAnimation("Greeting");
+      } else {
+        setAnimation("Dance");
+      }
     } else {
+      setAnimation("Idle");
       audio.pause();
     }
-  }, [playAudio, script])
+  }, [playAudio, script]);
 
   const group = useRef();
 
@@ -38,34 +98,77 @@ export function Avatar(props) {
   const { nodes, materials } = useGraph(clone);
 
   const { animations: idleAnimation } = useFBX("/animations/Idle.fbx");
-  const { animations: angryAnimation } = useFBX(
-    "/animations/Angry Gesture.fbx"
+  const { animations: danceAnimation } = useFBX(
+    "/animations/Hip Hop Dancing.fbx"
   );
   const { animations: greetingAnimation } = useFBX(
     "/animations/Standing Greeting.fbx"
   );
 
   idleAnimation[0].name = "Idle";
-  angryAnimation[0].name = "Angry";
+  danceAnimation[0].name = "Dance";
   greetingAnimation[0].name = "Greeting";
 
-  
+  idleAnimation[0].tracks = idleAnimation[0].tracks.filter(
+    (track) => !track.name.includes("Armature")
+  );
+  danceAnimation[0].tracks = danceAnimation[0].tracks.filter(
+    (track) => !track.name.includes("Armature")
+  );
+  greetingAnimation[0].tracks = greetingAnimation[0].tracks.filter(
+    (track) => !track.name.includes("Armature")
+  );
+
   const { actions } = useAnimations(
-    [
-    idleAnimation[0],
-    angryAnimation[0],
-    greetingAnimation[0],
-  ],
+    [idleAnimation[0], danceAnimation[0], greetingAnimation[0]],
     group
   );
 
   const [animation, setAnimation] = useState("Idle");
 
+  //my code was working with this
+  // useEffect(() => {
+  //   if(!actions || !actions[animation]) return;
+  //   actions[animation].reset().fadeIn(0.5).play();
+  //   return () => actions[animation]?.fadeOut(0.5);
+  // }, [animation]);
+
+  // useEffect(() => {
+
+  // actions[animation].reset().fadeIn(0.5).play();
+  // return () => actions[animation].fadeOut(0.5);
+  // }, [animation]);
+
+  //   useEffect(() => {
+  //   actions[animation]?.reset().fadeIn(0.5).play();
+  //   return () => actions[animation]?.fadeOut(0.5);
+  // }, [animation]);
+
+  //this is the change for "idle" alone
+  // useEffect(() => {
+  // if (!actions?.Idle) return;
+
+  // actions.Idle.reset().fadeIn(0.5).play();
+
+  // ❌ NO cleanup
+  // }, []); // 👈 empty dependency array
+
+  const previousAnimation = useRef();
+
   useEffect(() => {
-    if(!actions || !actions[animation]) return;
-    actions[animation].reset().fadeIn(0.5).play();
-    return () => actions[animation]?.fadeOut(0.5);
-  }, [animation]);
+    if (!actions || !actions[animation]) return;
+
+    const current = actions[animation];
+
+    // fade out previous animation ONLY when switching
+    if (previousAnimation.current && previousAnimation.current !== current) {
+      previousAnimation.current.fadeOut(0.3);
+    }
+
+    current.reset().fadeIn(0.3).play();
+
+    previousAnimation.current = current;
+  }, [animation, actions]);
 
   return (
     <group {...props} dispose={null} ref={group}>
